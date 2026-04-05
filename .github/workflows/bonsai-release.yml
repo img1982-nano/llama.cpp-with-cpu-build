@@ -37,7 +37,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
@@ -72,12 +72,13 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
+          
           mkdir -p dist
-
+          
           cp -v build/bin/llama-cli dist/ || true
           cp -v build/bin/llama-server dist/ || true
           cp -v build/bin/llama-bench dist/ || true
-
+          
           cat > dist/BUILD-INFO.txt <<EOF
           Repository: ${{ github.repository }}
           Commit: ${{ github.sha }}
@@ -86,7 +87,7 @@ jobs:
           Runner OS: ${{ runner.os }}
           Build flags: ${{ matrix.cmake_flags }}
           EOF
-
+          
           tar -czf "${{ matrix.archive_name }}" -C dist .
 
       - name: Upload workflow artifact
