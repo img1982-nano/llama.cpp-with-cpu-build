@@ -65,20 +65,43 @@ jobs:
             llama-bench
 
       - name: Show outputs
+        shell: bash
         run: |
-          ls -lah build/bin || true
+          echo "== build/bin =="
+          find build/bin -maxdepth 3 -type f | sort || true
 
-      - name: Package
+      - name: Inspect shared libraries
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          echo "== shared libs under build =="
+          find build -type f | grep -E 'lib(mtmd|llama|ggml).*\.so(\..*)?$' | sort || true
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euxo pipefail
-          
-          mkdir -p dist
-          
+
+          mkdir -p dist/lib
+
           cp -v build/bin/llama-cli dist/ || true
           cp -v build/bin/llama-server dist/ || true
           cp -v build/bin/llama-bench dist/ || true
-          
+
+          find build -type f | grep -E '/lib(mtmd|llama|ggml).*\.so(\..*)?$' | while read -r f; do
+            cp -v "$f" dist/lib/
+          done
+
+          cat > dist/run-llama.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          export LD_LIBRARY_PATH="$DIR/lib:${LD_LIBRARY_PATH:-}"
+          exec "$DIR/llama-cli" "$@"
+          EOF
+          chmod +x dist/run-llama.sh
+
           cat > dist/BUILD-INFO.txt <<EOF
           Repository: ${{ github.repository }}
           Commit: ${{ github.sha }}
@@ -87,8 +110,49 @@ jobs:
           Runner OS: ${{ runner.os }}
           Build flags: ${{ matrix.cmake_flags }}
           EOF
-          
+
           tar -czf "${{ matrix.archive_name }}" -C dist .
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          mkdir -p dist/lib
+
+          cp -v build/bin/llama-cli dist/ || true
+          cp -v build/bin/llama-server dist/ || true
+          cp -v build/bin/llama-bench dist/ || true
+
+          find build -type f \( -name "libmtmd*.dylib" -o -name "libllama*.dylib" -o -name "libggml*.dylib" \) | while read -r f; do
+            cp -v "$f" dist/lib/
+          done
+
+          cat > dist/run-llama.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          export DYLD_LIBRARY_PATH="$DIR/lib:${DYLD_LIBRARY_PATH:-}"
+          exec "$DIR/llama-cli" "$@"
+          EOF
+          chmod +x dist/run-llama.sh
+
+          cat > dist/BUILD-INFO.txt <<EOF
+          Repository: ${{ github.repository }}
+          Commit: ${{ github.sha }}
+          Ref: ${{ github.ref }}
+          Workflow: ${{ github.workflow }}
+          Runner OS: ${{ runner.os }}
+          Build flags: ${{ matrix.cmake_flags }}
+          EOF
+
+          tar -czf "${{ matrix.archive_name }}" -C dist .
+
+      - name: Show packaged archive contents
+        shell: bash
+        run: |
+          tar -tzf "${{ matrix.archive_name }}" | sort
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
